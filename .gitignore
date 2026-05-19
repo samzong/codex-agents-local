@@ -1,0 +1,4 @@
+AGENTS.local.md
+AGENTS.override.md
+__pycache__/
+.DS_Store
