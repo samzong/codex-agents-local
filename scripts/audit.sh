@@ -29,6 +29,9 @@ find install.sh hooks scripts -type f -print0 | xargs -0 shellcheck
 printf '==> python compile\n'
 python3 -m py_compile bin/codex-agents-local
 
+printf '==> python unit tests\n'
+python3 -m unittest discover -s tests
+
 printf '==> no CJK project text\n'
 if rg -n '[\p{Han}]' --glob '!.git/**' .; then
   fail "CJK text found in project files"
@@ -109,5 +112,23 @@ CODEX_HOME="$tmp/codex-home" "$tmp/bin/codex-agents-local" hook user-prompt-subm
 EOF
 
 test "$(cat "$tmp/user-prompt.json")" = '{"continue":true,"suppressOutput":true}'
+
+printf '==> symlink safety\n'
+symlink_repo="$tmp/symlink-repo"
+outside="$tmp/outside"
+mkdir -p "$symlink_repo" "$outside"
+git -C "$symlink_repo" init --quiet
+printf 'outside secret\n' > "$outside/secret.txt"
+ln -s "$outside/secret.txt" "$symlink_repo/AGENTS.local.md"
+
+CODEX_HOME="$tmp/codex-home" "$tmp/bin/codex-agents-local" hook session-start <<EOF > "$tmp/symlink-local.json"
+{"cwd":"$symlink_repo","session_id":"symlink-local"}
+EOF
+
+test ! -e "$symlink_repo/AGENTS.override.md"
+rg -q 'AGENTS.local.md is not a regular file under' "$tmp/symlink-local.json"
+if rg -q 'outside secret' "$tmp/symlink-local.json"; then
+  fail "symlinked AGENTS.local.md leaked target contents"
+fi
 
 printf 'audit ok\n'
