@@ -32,9 +32,9 @@ python3 -m py_compile bin/codex-agents-local
 printf '==> python unit tests\n'
 python3 -m unittest discover -s tests
 
-printf '==> no CJK project text\n'
-if rg -n '[\p{Han}]' --glob '!.git/**' .; then
-  fail "CJK text found in project files"
+printf '==> no unexpected CJK project text\n'
+if rg -n '[\p{Han}]' --glob '!.git/**' --glob '!README.zh-CN.md' .; then
+  fail "unexpected CJK text found in project files"
 fi
 
 printf '==> dangerous shell patterns\n'
