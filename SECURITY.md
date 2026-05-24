@@ -42,7 +42,7 @@ The audit requires `shellcheck`, `rg`, `git`, and `python3`. It checks:
 - shell syntax for install and hook scripts
 - ShellCheck findings
 - Python bytecode compilation
-- absence of CJK project text
+- absence of CJK project text outside localized docs
 - dangerous shell patterns
 - dangerous Python patterns
 - temporary installation behavior
