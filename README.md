@@ -85,6 +85,8 @@ flowchart TD
 
 `UserPromptSubmit` syncs later `AGENTS.local.md` edits the next time you send a message.
 
+Deleting `AGENTS.local.md` removes its managed `AGENTS.override.md` on the next sync. Existing sessions receive a notice to discard the removed local instructions. `sync --check` previews the removal without changing files. Unmanaged overrides and symlinks remain untouched.
+
 `PreToolUse` is available for stronger long-session sync, but it is not installed by default.
 
 ## Commands

@@ -6,6 +6,7 @@
 
 - Reads `AGENTS.md` and `AGENTS.local.md` files under the current workspace root.
 - Writes generated `AGENTS.override.md` files only in directories that contain `AGENTS.local.md`.
+- Removes managed regular `AGENTS.override.md` files when their `AGENTS.local.md` source is absent.
 - Writes hook state under `~/.codex/tmp/codex-agents-local/state.json`.
 - Updates `~/.codex/hooks.json` during installation.
 - Installs `codex-agents-local` into `~/.local/bin` by default.

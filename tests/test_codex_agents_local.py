@@ -91,6 +91,56 @@ class CodexAgentsLocalTests(unittest.TestCase):
         self.assertTrue(entries[0].blocked)
         self.assertEqual("manual\n", (repo / "AGENTS.override.md").read_text(encoding="utf-8"))
 
+    def test_deleted_local_removes_only_managed_overrides(self) -> None:
+        for name in ("managed", "manual", "symlink", "broken-local", "invalid-local"):
+            directory = self.root / name
+            directory.mkdir()
+            (directory / "AGENTS.local.md").write_text("obsolete rule\n", encoding="utf-8")
+        cal.sync_tree(self.root, str(self.root), write=True)
+        for directory in self.root.iterdir():
+            (directory / "AGENTS.local.md").unlink()
+        manual = self.root / "manual" / "AGENTS.override.md"
+        manual.write_text("manual rule\n", encoding="utf-8")
+        symlink = self.root / "symlink" / "AGENTS.override.md"
+        symlink.unlink()
+        symlink.symlink_to("../managed/AGENTS.override.md")
+        (self.root / "broken-local" / "AGENTS.local.md").symlink_to("missing.md")
+        (self.root / "invalid-local" / "AGENTS.local.md").mkdir()
+        managed = self.root / "managed" / "AGENTS.override.md"
+
+        _root, preview = cal.sync_tree(self.root, str(self.root), write=False)
+        self.assertTrue(managed.exists())
+        self.assertTrue(any(entry.removed and not entry.wrote for entry in preview))
+        _root, entries = cal.sync_tree(self.root, str(self.root), write=True)
+
+        self.assertFalse(managed.exists())
+        self.assertEqual("manual rule\n", manual.read_text(encoding="utf-8"))
+        self.assertTrue(symlink.is_symlink())
+        self.assertTrue((self.root / "broken-local" / "AGENTS.override.md").exists())
+        self.assertTrue((self.root / "invalid-local" / "AGENTS.override.md").exists())
+        self.assertEqual(1, sum(entry.removed and entry.wrote for entry in entries))
+
+    def test_other_sessions_receive_local_removal_once(self) -> None:
+        local = self.root / "AGENTS.local.md"
+        local.write_text("obsolete rule\n", encoding="utf-8")
+        root, entries = cal.sync_tree(self.root, str(self.root), write=True)
+        state = {"roots": {}, "sessions": {}}
+        for session in ("first", "second"):
+            cal.mark_session_synced(state, session, root, entries)
+        local.unlink()
+        root, entries = cal.sync_tree(root, str(root), write=True)
+        changed = cal.changed_entries_for_session(state, "first", root, entries)
+        self.assertEqual(1, len(changed))
+        self.assertIn("Discard earlier local instructions", cal.build_additional_context(root, changed))
+        cal.mark_session_synced(state, "first", root, entries)
+        root, entries = cal.sync_tree(root, str(root), write=True)
+        self.assertEqual([], cal.changed_entries_for_session(state, "first", root, entries))
+        changed = cal.changed_entries_for_session(state, "second", root, entries)
+        self.assertEqual(1, len(changed))
+        self.assertTrue(changed[0].removed)
+        cal.mark_session_synced(state, "second", root, entries)
+        self.assertEqual([], cal.changed_entries_for_session(state, "second", root, entries))
+
     def test_install_hooks_recovers_invalid_json_with_backup(self) -> None:
         codex_home = self.root / "codex-home"
         hooks_file = codex_home / "hooks.json"
