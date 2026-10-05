@@ -38,6 +38,7 @@ class Entry:
     wrote: bool
     blocked: bool
     warning: str | None
+    removed: bool = False
 
 
 def eprint(message: str) -> None:
@@ -225,12 +226,33 @@ def build_override_content(
     return "\n".join(body_parts)
 
 
+def removed_entry(directory: Path, write: bool = False) -> Entry:
+    override_path = directory / OVERRIDE_NAME
+    if write:
+        override_path.unlink()
+        fsync_directory(directory)
+    return Entry(
+        directory=directory,
+        base_path=directory / BASE_NAME,
+        local_path=directory / LOCAL_NAME,
+        override_path=override_path,
+        content="",
+        digest=sha256_text("local instructions removed"),
+        wrote=write,
+        blocked=False,
+        warning=None,
+        removed=True,
+    )
+
+
 def build_entry(directory: Path, root: Path, write: bool) -> Entry | None:
     local_path = directory / LOCAL_NAME
     local_source, local_error = classify_source(local_path, root)
     if local_error:
         return blocked_entry(directory, f"{local_error}; leaving it untouched.")
     if not local_source:
+        if is_managed_override(directory / OVERRIDE_NAME):
+            return removed_entry(directory, write)
         return None
 
     base_path = directory / BASE_NAME
@@ -418,7 +440,19 @@ def changed_entries_for_session(
     previous_entries = previous.get("entries")
     if not isinstance(previous_entries, dict):
         return entries
-    return [entry for entry in entries if previous_entries.get(str(entry.directory)) != entry_state_value(entry)]
+    current_directories = {str(entry.directory) for entry in entries}
+    removed = []
+    for directory_name in previous_entries.keys() - current_directories:
+        directory = Path(directory_name)
+        if not is_inside_root(directory.resolve(), root):
+            continue
+        if exists_or_symlink(directory / LOCAL_NAME) or exists_or_symlink(directory / OVERRIDE_NAME):
+            continue
+        removed.append(removed_entry(directory))
+    return [
+        entry for entry in entries + removed
+        if previous_entries.get(str(entry.directory)) != entry_state_value(entry)
+    ]
 
 
 def mark_session_synced(
@@ -446,6 +480,17 @@ def build_additional_context(root: Path, entries: list[Entry]) -> str:
         "",
     ]
     for entry in sorted(entries, key=lambda item: str(item.directory)):
+        if entry.removed:
+            parts.extend(
+                [
+                    f"## Directory: {entry.directory}",
+                    "",
+                    f"{LOCAL_NAME} has been removed. Discard earlier local instructions for this directory.",
+                    f"The generated {OVERRIDE_NAME} no longer applies. Use the current {BASE_NAME} and inherited instructions.",
+                    "",
+                ]
+            )
+            continue
         if entry.blocked:
             parts.extend(
                 [
@@ -526,6 +571,7 @@ def command_sync(args: argparse.Namespace) -> int:
                 "override": str(entry.override_path),
                 "digest": entry.digest,
                 "wrote": entry.wrote,
+                "removed": entry.removed,
                 "blocked": entry.blocked,
                 "warning": entry.warning,
             }
@@ -537,7 +583,10 @@ def command_sync(args: argparse.Namespace) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         for entry in entries:
-            status = "blocked" if entry.blocked else ("wrote" if entry.wrote else "ok")
+            if entry.removed:
+                status = "removed" if entry.wrote else "would remove"
+            else:
+                status = "blocked" if entry.blocked else ("wrote" if entry.wrote else "ok")
             print(f"{status} {entry.override_path}")
             if entry.warning:
                 eprint(f"warning: {entry.warning}")
